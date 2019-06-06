@@ -1,0 +1,34 @@
+﻿1）下载安装
+centos系统
+# yum install readline-devel pcre pcre-devel openssl openssl-devel gcc curl GeoIP-devel
+下载源码包
+https://github.com/openresty/openresty/releases
+选择最新版本v1.13.6.1
+解压安装
+# tar -xzvf openresty-1.13.6.1.tar.gz
+# cd openresty-1.13.6.1/
+
+##选择模块 ./configure --help
+
+# ./configure --with-luajit --with-pcre --with-http_gzip_static_module --with-http_realip_module --with-http_geoip_module --with-http_ssl_module  --with-http_stub_status_module 
+
+--with-http_gzip_static_module #静态文件压缩
+--with-http_stub_status_module #监控nginx状态
+--with-http_realip_module #通过这个模块允许我们改变客户端请求头中客户端IP地址值(例如X-Real-IP 或 X-Forwarded-For)，意义在于能够使得后台服务器记录原始客户端的IP地址
+--with-pcre #设置PCRE库（pcre pcre-devel）
+--with-http_ssl_module #使用https协议模块。（openssl openssl-devel）
+--with-http_geoip_module #增加了根据ip获得城市信息，经纬度等模块 （GeoIP-devel）
+
+# make && make install
+
+2）安装成功后，默认会在/usr/local/openresty/
+目录下
+luajit 是采用C语言写的Lua代码的解释器 ----just in time   即时解析
+lualib 是编辑好的lua类库
+nginx，其实我们openResty就是nginx，只是做了一些模块化工作；所以启动openResty就是启动nginx，我们可以到 cd nginx/sbin/，直接运行  ./nginx
+
+3）设置环境变量
+# vi /etc/profile
+export NGINX_HOME=/usr/local/openresty/nginx
+export PATH=$PATH:$NGINX_HOME/sbin
+# source /etc/profile ##生效

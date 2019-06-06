@@ -1,0 +1,16 @@
+﻿1）ngx_lua模块的hello world
+编辑nginx下conf配置文件nginx.conf
+# vi nginx.conf
+在server模块加上
+location /helloworld {
+	default_type text/html;
+    content_by_lua 'ngx.say("hello world")';
+}
+
+检查配置文件是否正确
+# /usr/local/openresty/nginx/sbin/nginx -t -c /usr/local/openresty/nginx/conf/nginx.conf
+
+重启nginx
+# ./nginx -s reload
+访问http://192.168.31.138/helloworld  输出 hello world
+

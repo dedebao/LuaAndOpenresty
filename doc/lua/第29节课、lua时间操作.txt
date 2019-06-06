@@ -1,0 +1,90 @@
+
+在 Lua 中，函数 time、date 和 difftime 提供了所有的日期和时间功能。
+在 OpenResty 的世界里，不推荐使用这里的标准时间函数，
+因为这些函数通常会引发不止一个昂贵的系统调用，同时无法为 LuaJIT JIT 编译，对性能造成较大影响。
+推荐使用 ngx_lua 模块提供的带缓存的时间接口，
+如 ngx.today, ngx.time, ngx.utctime, ngx.localtime, ngx.now, ngx.http_time，以及 ngx.cookie_time 等。
+
+一）os.time ([table])
+它会返回当前的时间和日期的时间戳（精确到秒），如赋值table，表示此table指定日期的时间戳
+
+字段名称 		取值范围
+year 			四位数字
+month 			1--12
+day 			1--31
+hour 			0--23
+min 			0--59
+sec 			0--59
+isdst 			boolean（true表示夏令时）
+
+对于 time 函数，如果参数为 table，那么 table 中必须含有 year、month、day 字段。
+其他字缺省时段默认为中午（12:00:00）。
+print(os.time())    
+a = { year = 2018, month = 1, day = 30, hour = 0, min = 0, sec = 0 }
+print(os.time(a))   
+
+时间戳的是以计算机最小时间和指定时间之间相差的秒数，计算机最小时间为1970-1-1 00:00:00（美国时区），
+针对中国时区就是1970-1-1 08:00:00
+a = { year = 1970, month = 1, day = 1, hour = 8, min = 0, sec = 1 }
+print(os.time(a)) 
+输出的就是1秒
+
+二）os.difftime (t2, t1)
+返回 t1 到 t2 的时间差，单位为秒。
+
+local day1 = { year = 2018, month = 1, day = 30 }
+local t1 = os.time(day1)
+local day2 = { year = 2018, month = 1, day = 31 }
+local t2 = os.time(day2)
+print(os.difftime(t2, t1))
+
+--->output：86400
+
+三）os.date ([format [, time]])
+把一个表示日期和时间的数值，转换成更高级的表现形式。
+格式字符 			含义
+%a 					一星期中天数的简写（例如：Wed）
+%A 					一星期中天数的全称（例如：Wednesday）
+%b 					月份的简写（例如：Sep）
+%B 					月份的全称（例如：September）
+%c 					日期和时间（例如：07/30/15 16:57:24）
+%d 					一个月中的第几天[01 ~ 31]
+%H 					24小时制中的小时数[00 ~ 23]
+%I 					12小时制中的小时数[01 ~ 12]
+%j 					一年中的第几天[001 ~ 366]
+%M 					分钟数[00 ~ 59]
+%m 					月份数[01 ~ 12]
+%p 					“上午（am）”或“下午（pm）”
+%S 					秒数[00 ~ 59]
+%w 					一星期中的第几天[0 ~ 6 = 星期天 ~ 星期六]
+%x 					日期（例如：07/30/15）
+%X 					时间（例如：16:57:24）
+%y 					两位数的年份[00 ~ 99]
+%Y 					完整的年份（例如：2015）
+%% 					字符'%'
+
+print(os.date("today is %A, in %B"))
+print(os.date("now is %x %X"))
+print(os.date("%Y-%m-%d %H:%M:%S"))
+
+-->output
+today is Thursday, in July
+now is 07/30/15 17:39:22
+2018-03-29 22:36:05
+
+---------------------------
+
+t = os.date("*t", os.time());
+for i, v in pairs(t) do
+      print(i, v);
+end
+
+yday    120  --一年中的第几天，一月一日为1
+month   4
+sec     9
+min     9
+hour    16
+day     30
+year    2018
+isdst   false  --是否夏令时
+wday    2   --一周第几天  星期日为1

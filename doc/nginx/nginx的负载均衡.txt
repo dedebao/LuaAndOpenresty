@@ -1,0 +1,50 @@
+当一台服务器单位时间内访问量很大的时候，服务器压力就会很大，当达到这台服务器的极限，就会崩溃；怎么解决？可以通过nginx的反向代理设置，添加几台同样功能的服务器 分担压力。
+
+nginx实现负载均衡原理，用户访问首先访问到nginx服务器，然后nginx服务器再从应用服务器集群中选择压力比较小的服务器，然后将该访问请求引向该服务器。如应用服务器集群中某一台服务器崩溃，那么从待选择服务器列表中将该服务器删除，也就是说一个服务器崩溃了，那么nginx服务器不会把请求引向到该服务器。
+
+upstream mypro {
+    server 192.168.5.140:8080;
+    server 192.168.5.141:8080;
+    xxxxx
+    xxxx
+}
+
+server {
+    listen 80;
+    server_name xxxx;
+    location / {
+        proxy_pass http://mypro;
+    } 
+ }
+
+1）负载均衡方案
+
+随机轮询
+upstream mypro {
+    server 192.168.5.140:8080;
+    server 192.168.5.141:8080;
+}
+
+权重
+upstream mypro {
+    server 192.168.5.140:8080 weight=5;
+    server 192.168.5.141:8080 weight=10;
+}
+
+ip_hash
+upstream mypro {
+    ip_hash;
+    server 192.168.5.140:8080;
+    server 192.168.5.141:8080;
+}
+
+
+
+server {
+    listen       80;
+    server_name  192.168.5.138;
+     location / {
+        proxy_pass http://mypro;
+    }
+}
+

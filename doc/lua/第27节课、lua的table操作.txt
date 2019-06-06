@@ -1,0 +1,289 @@
+
+Lua中table内部实际采用哈希表和数组分别保存键值对、普通值；下标从1开始
+
+不推荐混合使用这两种赋值方式。
+
+local color={first="red", "blue", third="green", "yellow"}
+
+print(color["first"])                 --> output: red
+print(color[1])                       --> output: blue
+print(color["third"])                 --> output: green
+print(color[2])                       --> output: yellow
+print(color[3])                       --> output: nil
+
+一）table.getn 获取长度
+
+相关于取长度操作符写作一元操作 #。
+
+字符串的长度是它的字节数（就是以一个字符一个字节计算的字符串长度）。
+对于常规的数组，里面从 1 到 n 放着一些非空的值的时候，它的长度就精确的为 n，即最后一个值的下标。
+local tblTest1 = { 1, a = 2, 3 }
+print("Test1 " .. table.getn(tblTest1))
+此table的长度为2，可是明明是三个数值啊，这里要说明一下，getn 只能执行数值型的table，即数值索引的值.
+忽略哈希值类型的键值对map，即不包含字符索引值
+
+local tblTest1 = { b=1, a = 2, 3 }
+print("Test1 " .. table.getn(tblTest1))    #输出长度为1
+
+local tblTest1 = { b=1, a = 2, c=3 }
+print("Test1 " .. table.getn(tblTest1))    #输出长度为0
+
+local tblTest1 = { 1, 2, 3 }
+print("Test1 " .. table.getn(tblTest1))    #输出长度为3
+
+在有个地方说明一下
+--此table 虽然有[3]=6,也是数组型，但是不连续的，缺少了2的索引，所以输出长度为1
+
+local tblTest1 = { [3] = 6,c = 1, a = 2, [1]=3 }
+print("Test1 " .. table.getn(tblTest1))   
+
+--此table 数值索引是连续 到2，所以输出长度为2
+local tblTest1 = { [2] = 6,c = 1, a = 2, 3 } 
+print("Test1 " .. table.getn(tblTest1))   
+
+=============================
+获取table长度，不区分数组和键值对
+
+function table_length(t)
+  local leng=0
+  for k, v in pairs(t) do
+    leng=leng+1
+  end
+  return leng;
+end
+
+=================
+特殊说明：
+
+如果数组有一个“空洞”（就是说，nil 值被夹在非空值之间），那么 #t 可能是指向任何一个是 nil 值的前一个位置的下标（就是说，任何一个 nil 值都有可能被当成数组的结束）。
+这也就说明对于有“空洞”的情况，table 的长度存在一定的 不可确定性。
+
+关于nil的特别说明
+local tblTest2 = { 1,nil,2}
+对一个table中有nil值 取长度，会有很多不确定性，不同的luajit版本输出的结果也不一样
+
+不要在 Lua 的 table 中使用 nil 值，如果一个元素要删除，直接 remove，不要用 nil 去代替。
+
+二）table.concat (table [, sep [, i [, j ] ] ])
+
+对于元素是 string 或者 number 类型的表 table，
+返回 table[i]..sep..table[i+1] ··· sep..table[j] 连接成的字符串。填充字符串 sep 默认为空白字符串。
+起始索引位置 i 默认为 1，结束索引位置 j 默认是 table 的长度。如果 i 大于 j，返回一个空字符串。
+
+local a = {1, 3, 5, "hello" }
+print(table.concat(a))              -- output: 135hello
+print(table.concat(a, "|"))         -- output: 1|3|5|hello
+print(table.concat(a, " ", 2, 4))   -- output: 3 5 hello
+print(table.concat(a, " ", 4, 2))   -- output:
+
+
+
+在介绍string字符串那边有个字符串拼接，是用.. 这个符号进行的
+local str = "a" .. "b" .. "c"..........................  推荐用concat
+
+
+三）table.insert (table, [pos ,] value)
+
+在（数组型）表 table 的 pos 索引位置插入 value，其它元素向后移动到空的地方。
+pos 的默认值是表的长度加一，即默认是插在表的最后。
+local a = {1, 8}             --a[1] = 1,a[2] = 8
+table.insert(a, 1, 3)   --在表索引为1处插入3
+print(a[1], a[2], a[3])
+table.insert(a, 10)    --在表的最后插入10
+print(a[1], a[2], a[3], a[4])
+
+-->output
+3   1   8
+3   1   8   10
+
+四）table.remove (table [, pos])
+
+在表 table 中删除索引为 pos（pos 只能是 number型）的元素，并返回这个被删除的元素，
+它后面所有元素的索引值都会减一。pos 的默认值是表的长度，即默认是删除表的最后一个元素。
+local a = { 1, 2, 3, 4}
+print(table.remove(a, 1)) --删除速索引为1的元素
+print(a[1], a[2], a[3], a[4])
+
+print(table.remove(a))   --删除最后一个元素
+print(a[1], a[2], a[3], a[4])
+
+-->output
+1
+2   3   4   nil
+4
+2   3   nil nil
+
+
+五）table.sort (table [, comp])
+
+local a = { 1, 7, 3, 4, 25}
+table.sort(a)           --默认从小到大排序
+
+print(a[1], a[2], a[3], a[4], a[5])
+-->output
+1   3   4   7   25
+
+
+按照给定的比较函数 comp 给表 table 排序，也就是从 table[1] 到 table[n]，这里 n 表示 table 的长度。 
+比较函数有两个参数，如果希望第一个参数排在第二个的前面，就应该返回 true，否则返回 false。 
+如果比较函数 comp 没有给出，默认从小到大排序。
+
+local function compare(x, y) --从大到小排序
+   return x > y         --如果第一个参数大于第二个就返回true，否则返回false
+end
+
+table.sort(a, compare) --使用比较函数进行排序
+print(a[1], a[2], a[3], a[4], a[5])
+
+-->output
+25  7   4   3   1
+
+
+六）table.maxn (table)
+
+返回（数组型）表 table 的最大索引编号；如果此表没有正的索引编号，返回 0。
+local a = {}
+a[-1] = 10
+print(table.maxn(a))
+a[5] = 10
+print(table.maxn(a))
+
+-->output
+0
+5
+
+七）table 判断是否为空
+
+大家在使用 Lua 的时候，一定会遇到不少和 nil 有关的坑吧。
+有时候不小心引用了一个没有赋值的变量，这时它的值默认为 nil。如果对一个 nil 进行索引的话，会导致异常。
+如下：
+local person = {name = "Bob", sex = "M"}
+-- do something
+person = nil
+-- do something
+print(person.name)
+
+报错person为nil了
+然而，在实际的工程代码中，我们很难这么轻易地发现我们引用了 nil 变量。
+因此，在很多情况下我们在访问一些 table 型变量时，需要先判断该变量是否为 nil，例如将上面的代码改成：
+
+local person = {name = "Bob", sex = "M"}
+-- do something
+person = nil
+-- do something
+if person ~= nil then
+  print(person.name)
+else
+  print("person 为空")
+end
+
+对于简单类型的变量，我们可以用 if (var == nil) then 这样的简单句子来判断。
+我们如果要判断table类型的对象是否为空，那如何判断呢？
+
+我们思考一下，判断table是否为空有两种情况：
+
+第一种table对象为nil；
+第二种table对象为{}，代表没有键值对，但不为nil。
+
+那么我们一般的判断逻辑就应该是 table == nil  或者 table的长度为0  就表示为空
+下面我们看看以下例子：
+local a = {}
+local b = {name = "Bob", sex = "Male"}
+local c = {"Male", "Female"}
+local d = nil
+
+if a == nil then
+    print("a == nil")
+end
+
+if b == nil then
+    print("b == nil")
+end
+
+if c == nil then
+    print("c == nil")
+end
+
+if d== nil then
+    print("d == nil")
+end
+ 
+if next(a) == nil then
+    print("next(a) == nil")
+end
+
+if next(b) == nil then
+    print("next(b) == nil")
+end
+
+if next(c) == nil then
+    print("next(c) == nil")
+end
+
+
+以上有几个注意点，涉及到table类型的长度
+(#a)   --"#"表示为获取table类型的长度，类似table.getn()
+因为a为{}，所以长度为0.
+
+我们再看(#b) ，依然输出的是0，但b是有值的啊。
+
+我们再看(#c)，输出的是2，这个是怎么回事。这里就是之前在table类型的课程中已经介绍的获取table的长度，
+只是获取的是 数组型的长度，不包含map型的。
+
+我们再往下看 if a == nil then  在判断 a是否为nil，明显a不为nil
+if next(a) == nil then中的next是什么意思呢？
+
+next (table [, index])
+功能：允许程序遍历表中的每一个字段，返回下一索引和该索引的值。
+参数：table：要遍历的表
+　　　index：要返回的索引的前一索中的号，当index为nil[]时，将返回第一个索引的值，
+      当索引号为最后一个索引或表为空时将返回nil
+next(a) 就是返回第一个索引的值，a的第一个索引是没有值的，那么next(a) 就为nil
+所以next方法经常用来判断 table中是否有值。
+下面的语句相信大家就能看懂了。
+综合以上代码，我们判断table是否为空，就不能简单的判断table长度是否为0，而是判断索引值。
+
+所以要判断table是否为空应该按照以下进行判断
+
+function isTableEmpty(t)
+    return t == nil or next(t) == nil
+end
+
+八）ipairs和pairs的区别
+
+为了看出两者的区别，首先定义一个table:
+a={"Hello","World";a=1,b=2,z=3,x=10,y=20;"Good","Bye"}  
+for i, v in ipairs(a) do
+	print(v)
+end
+输出的结果是：
+Hello
+World
+Good
+Bye
+可见ipairs并不会输出table中存储的键值对，会跳过键值对，然后按顺序输出table中的值。
+再使用pairs对其进行遍历：
+for i, v in pairs(a) do
+	print(v)
+end
+输出的结果是：
+Hello 
+World 
+Good  
+Bye   
+1     
+10    
+2     
+20    
+3     
+可见pairs会输出table中的值和键值对，并且在输出的过程中先按顺序输出值，再乱序输出键值对。
+这是因为table在存储值的时候是按照顺序的，但是在存储键值对的时候是按照键的哈希值存储的，
+并不会按照键的字母顺序或是数字顺序存储。
+对于a来说，如果执行print(a[3]),输出的结果也会是Good。也就是说table并不会给键值对一个索引值。
+
+也就是说ipairs只是按照索引值顺序，打印出了table中有索引值的数据，没有索引值的不管。
+而pairs是先按照数组索引值打印，打印完成后再按照哈希键值对的键的哈希值打印它的值。
+
+
+LuaJIT 2.1  新增加的 table.new 和 table.clear 函数是非常有用的。
+前者主要用来预分配 Lua table 空间，后者主要用来高效的释放 table 空间，并且它们都是可以被 JIT 编译的。
