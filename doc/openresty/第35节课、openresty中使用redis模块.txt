@@ -1,0 +1,195 @@
+在一些高并发的场景中，我们常常会用到缓存技术，现在我们常用的分布式缓存redis是最知名的，
+
+我们这里介绍一下如何操作redis。
+
+操作redis，我们需要引入redis模块 require "resty.redis"；
+
+我们现在做个可以操作redis进行赋值，读值的案例
+
+一）连接redis服务器
+
+---定义 redis关闭连接的方法
+local function close_redis(red)  
+    if not red then  
+        return  
+    end  
+    local ok, err = red:close()  
+    if not ok then  
+        ngx.say("close redis error : ", err)  
+    end  
+end  
+
+local redis = require "resty.redis"  --引入redis模块
+local red = redis:new()  --创建一个对象，注意是用冒号调用的
+--设置超时（毫秒）  
+red:set_timeout(1000) 
+--建立连接  
+local ip = "192.168.31.247"  
+local port = 6379
+local ok, err = red:connect(ip, port)
+if not ok then  
+    ngx.say("connect to redis error : ", err)  
+    return close_redis(red)  
+end  
+--调用API设置key  
+ok, err = red:set("msg", "hello world")  
+if not ok then  
+    ngx.say("set msg error : ", err)  
+    return close_redis(red)  
+end  
+--调用API获取key值  
+local resp, err = red:get("msg")  
+if not resp then  
+    ngx.say("get msg error : ", err)  
+    return close_redis(red)  
+end 
+
+ngx.say("msg : ", resp) 
+close_redis(red)  
+
+请求结果   msg : hello world
+
+--------------------------------
+注意：得到的数据为空处理 ，redis返回的空 为null，所以不能用nil判断，而要用ngx.null判断
+if resp == ngx.null then  
+    resp = ''  --比如默认值  
+end  
+
+
+--------------连接授权的redis-----------------
+在redis.conf配置文件 配置认证密码
+requirepass 123456
+
+注意：windows 启动redis时，配置redis.windows.conf；并且不能直接 双击redis-server.exe，
+如果双击启动，默认不会找此目录下的配置文件；需要指定配置文件
+解决方案：
+1）cmd窗口中 运行 redis-server.exe redis.windows.conf
+2）新建一个bat批处理文件  文件内容 redis-server.exe redis.windows.conf
+
+
+连接报错set msg error : NOAUTH Authentication required.因为认证出错
+在red:connect成功后，调用red:auth认证密码
+
+ok, err = red:auth("123456")
+if not ok then
+	ngx.say("failed to auth: ", err)
+	return close_redis(red)
+end
+
+=======================================================
+
+二）redis连接池
+
+redis的连接是tcp连接，建立TCP连接需要三次握手，而释放TCP连接需要四次握手，而这些往返时延仅需要一次，
+以后应该复用TCP连接，此时就可以考虑使用连接池，即连接池可以复用连接。
+我们需要把close_redis函数改造一下
+
+local function close_redis(red)  
+    if not red then  
+        return  
+    end  
+    --释放连接(连接池实现)  
+    local pool_max_idle_time = 10000 --毫秒  
+    local pool_size = 100 --连接池大小  
+    local ok, err = red:set_keepalive(pool_max_idle_time, pool_size)  
+    if not ok then  
+        ngx.say("set keepalive error : ", err)  
+    end  
+end  
+即设置空闲连接超时时间防止连接一直占用不释放；设置连接池大小来复用连接。
+注意：
+1、连接池是每Worker进程的，而不是每Server的；
+2、当连接超过最大连接池大小时，会按照LRU算法回收空闲连接为新连接使用；
+3、连接池中的空闲连接出现异常时会自动被移除；
+4、连接池是通过ip和port标识的，即相同的ip和port会使用同一个连接池（即使是不同类型的客户端）；
+5、连接池第一次set_keepalive时连接池大小就确定下了，不会再变更；
+
+---------------------------------------------------
+
+注意：我们如何知道，redis连接对象是从连接池中获取的，还是新创建的连接呢？？
+
+使用 red:get_reused_times --->得到此连接被使用的次数
+
+如果当前连接不是从内建连接池中获取的，该方法总是返回 0 ，也就是说，该连接还没有被使用过。
+
+如果连接来自连接池，那么返回值永远都是非零。所以这个方法可以用来确认当前连接是否来自池子。
+
+=============================================
+连接优化
+
+采用连接池，连接带认证的redis
+
+---定义 redis关闭连接的方法
+local function close_redis(red)  
+    if not red then  
+        return  
+    end  
+    --释放连接(连接池实现)  
+    local pool_max_idle_time = 10000 --毫秒  
+    local pool_size = 100 --连接池大小  
+    local ok, err = red:set_keepalive(pool_max_idle_time, pool_size)  
+    if not ok then  
+        ngx.say("set keepalive error : ", err)  
+    end  
+end   
+
+local redis = require "resty.redis"  --引入redis模块
+local red = redis:new()  --创建一个对象，注意是用冒号调用的
+--设置超时（毫秒）  
+red:set_timeout(1000) 
+--建立连接  
+local ip = "192.168.31.247"  
+local port = 6379
+local ok, err = red:connect(ip, port)
+if not ok then  
+    ngx.say("connect to redis error : ", err)  
+    return close_redis(red)  
+end  
+
+local count, err = red:get_reused_times()
+if 0 == count then ----新建连接，需要认证密码
+	ok, err = red:auth("123456")
+	if not ok then
+		ngx.say("failed to auth: ", err)
+		return
+	end
+elseif err then  ----从连接池中获取连接，无需再次认证密码
+	ngx.say("failed to get reused times: ", err)
+	return
+end
+
+--调用API设置key  
+ok, err = red:set("msg", "hello world333333333")  
+if not ok then  
+    ngx.say("set msg error : ", err)  
+    return close_redis(red)  
+end  
+--调用API获取key值  
+local resp, err = red:get("msg")  
+if not resp then  
+    ngx.say("get msg error : ", err)  
+    return close_redis(red)  
+end 
+
+ngx.say("msg : ", resp) 
+close_redis(red) 
+
+=======================================
+
+非常注意：连接池使用过程中，业务代码有select方法，会导致数据错乱
+
+ok, err = red:select(1)  --->选择db
+if not ok then
+    ngx.say("failed to select db: ", err)
+    return
+end
+
+如：
+A业务使用了db1，所以使用了 select(1);
+
+B业务使用默认的db0，select(0)遗漏
+
+但A，B业务共用了连接池，很有可能 B业务拿到的 A业务使用的连接，而此连接操作的数据库db1；
+而B业务中代码没有指定select数据库，所以B业务操作数据到了db1中；导致数据错乱
+
+切记！！！

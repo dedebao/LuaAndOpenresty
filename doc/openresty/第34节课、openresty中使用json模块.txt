@@ -1,0 +1,129 @@
+web开发过程中，经常用的数据结构为json，openresty中封装了json模块，我们看如何使用
+一）如何引入cjson模块，需要使用require
+local json = require("cjson")
+json.encode 将表格数据编码为 JSON 字符串
+格式： jsonString = json.encode(表格对象)
+用法示例：
+table 包含哈希键值对 和 数组键值对
+-------------------test.lua--------------
+1）table包含哈希键值对时，数组键值将被转换为字符串键值
+local json = require("cjson")
+local t = {1,3,name="张三",age="19",address={"地址1","地址2"},sex="女"}
+ngx.say(json.encode(t));
+ngx.say("<br/>");
+
+最终输出结果:
+----{"1":1,"2":3,"sex":"女","age":"19","address":["地址1","地址2"],"name":"张三"}
+
+
+local str = json.encode({a=1,[5]=3})
+ngx.say(str); ----- {"a":1,"5":3}
+ngx.say("<br/>");
+
+
+2）table所有键为数组型键值对时，会当作数组看待，空位将转化为null
+
+local str = json.encode({[3]=1,[5]=2,[6]="3",[7]=4})
+ngx.say(str); ---- [null,null,1,null,2,"3",4]
+ngx.say("<br/>");
+
+local str = json.encode({[3]=2,[5]=3})
+ngx.say(str); ---- [null,null,2,null,3]
+ngx.say("<br/>");
+----------------------------------------
+json.decode 将JSON 字符串解码为表格对象
+格式：table = json.decode(string)
+用法示例：
+
+local str  = [[ {"a":"v","b":2,"c":{"c1":1,"c2":2},"d":[10,11],"1":100} ]]
+local t    = json.decode(str)
+ngx.say(" --> ", type(t))
+
+-------------
+
+local str = [[ {"a":1,"b":null} ]]
+local t    = json.decode(str)
+ngx.say(t.a, "<br/>")  
+ngx.say(t.b == nil, "<br/>")  
+ngx.say(t.b == json.null, "<br/>")
+
+----> 1
+----> false
+----> true
+
+注意：null将会转换为json.null
+
+--------------------------------------
+二）异常处理
+
+local json = require("cjson")
+local str  = [[ {"key:"value"} ]]---少了一个双引号
+
+local t    = json.decode(str)
+ngx.say(" --> ", type(t))
+执行请求，看看效果，执行报了--500 Internal Server Error
+是因为decode方法报错了导致
+
+实际情况我们希望的结果不是报错，而是返回一个友好的结果，如返回个nil
+
+使用pcall命令
+如果需要在 Lua 中处理错误，必须使用函数 pcall（protected call）来包装需要执行的代码。 
+pcall 接收一个函数和要传递给后者的参数，并执行，执行结果：有错误、无错误；
+返回值 true 或者或 false, errorinfo。
+pcall 以一种"保护模式"来调用第一个参数（函数），因此 pcall 可以捕获函数执行中的任何错误。
+
+第一个方案：重新包装一个 json decode编码
+
+local json = require("cjson")
+
+local function _json_decode(str)
+  return json.decode(str)
+end
+
+function json_decode( str )
+    local ok, t = pcall(_json_decode, str)
+    if not ok then
+      return nil
+    end
+
+    return t
+end
+
+local str  = [[ {"key:"value"} ]]---少了一个双引号
+
+local t    = json_decode(str)
+ngx.say(t)
+
+执行效果，没有系统错误，返回了nil
+
+第二个方案：引入cjson.safe 模块接口，该接口兼容 cjson 模块，并且在解析错误时不抛出异常，而是返回 nil。(推荐)
+
+local json = require("cjson.safe")
+local str  = [[ {"key:"value"} ]]
+
+local t    = json.decode(str)
+if t then
+    ngx.say(" --> ", type(t))
+else
+	ngx.say("t is nil")
+end
+
+----------------------------
+
+三）空table返回object还是array
+
+测试一下，编码空table   {}
+local json = require("cjson")
+ngx.say("value --> ", json.encode({}))
+输出 value --> {}
+
+{}是个object；对于java的开发人员来说就不对了，空数组table，应该是[]
+
+这个是因为对于 Lua 本身，是把数组和哈希键值对融合到一起了，所以他是无法区分空数组和空字典的。
+
+要达到目标把 encode_empty_table_as_object 设置为 false
+
+local json = require("cjson")
+json.encode_empty_table_as_object(false)
+ngx.say("value --> ", json.encode({}))
+输出 value --> []

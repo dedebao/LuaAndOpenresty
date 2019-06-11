@@ -1,0 +1,92 @@
+OpenResty默认没有提供Http客户端，需要使用第三方提供
+我们可以从github上搜索相应的客户端，比如https://github.com/pintsized/lua-resty-http
+
+只要将 lua-resty-http/lib/resty/ 目录下的 http.lua 和 http_headers.lua 
+两个文件拷贝到 /usr/local/openresty/lualib/resty 目录下即可
+(假设你的 OpenResty 安装目录为 /usr/local/openresty)
+
+cd /usr/local/openresty/lualib/resty
+wget https://raw.githubusercontent.com/pintsized/lua-resty-http/master/lib/resty/http_headers.lua
+wget https://raw.githubusercontent.com/pintsized/lua-resty-http/master/lib/resty/http.lua
+
+local res, err = httpc:request_uri(uri, {  
+    method = "POST/GET",  ---请求方式
+    query = str,  ---get方式传参数
+    body = str,	 ---post方式传参数
+    path = "url" ----路径
+    headers = {  ---header参数
+        ["Content-Type"] = "application/json",  
+    }  
+})  
+
+--------------------------------------------
+
+编写个模拟请求淘宝的查询
+
+--引入http模块
+local http = require("resty.http")
+--创建http客户端实例
+local httpc = http.new()
+--request_uri函数请求淘宝
+local resp, err = httpc:request_uri("https://s.taobao.com", {
+    method = "GET",    		---请求方式
+    query = "q=iphone&b=2",   ---get方式传参数
+    body = "c=3&d=4",  		---post方式传参数
+    path = "/search", 		----路径
+    headers = { 			---header参数
+        ["User-Agent"] = "Mozilla/5.0 (Windows NT 6.1; WOW64) ",
+        ["token"] = "1234456"
+    }
+})
+
+if not resp then
+    ngx.say("request error :", err)
+    return
+end
+
+--获取返回的状态码
+ngx.status = resp.status
+
+if ngx.status ~= 200 then  
+    ngx.log(ngx.WARN,"非200状态，ngx.status:"..ngx.status)  
+    return resStr  
+end 
+
+--获取遍历返回的头信息
+for k, v in pairs(resp.headers) do
+    if type(v) == "table" then  
+        ngx.log(ngx.WARN,"table:"..k, ": ", table.concat(v, ", "))  
+    else  
+        ngx.log(ngx.WARN,"one:"..k, ": ", v)  
+    end  
+end
+
+--响应体
+ngx.say(resp.body)
+
+httpc:close()
+
+-------------------------------------------------------
+发现报错
+request error :no resolver defined to resolve "s.taobao.com"
+
+
+此错误是因为要配置DNS解析器resolver 8.8.8.8，否则域名是无法解析的。
+在nginx.conf配置文件中 http模块加上resolver 8.8.8.8; Google提供的免费DNS服务器的IP地址
+配置好后，重启nginx
+
+
+---------------------------------------------------------
+
+访问https错误，因为我们访问的https，需要配置ssl证书
+在nginx配置文件中，server虚拟主机模块设置
+
+lua_ssl_verify_depth 2;
+lua_ssl_trusted_certificate "/etc/ssl/certs/ca-bundle.crt";
+
+
+--------------------------------------------------------
+
+http模块应用场景很多，这里只简单介绍了一下http模块的使用
+
+还有很多openresty模块，可以参考 https://github.com/bungle/awesome-resty

@@ -1,0 +1,231 @@
+有些场景是需要nginx在进行请求转发，什么含义呢？
+
+用户浏览器请求url访问到nginx服务器，但此请求业务需要再次请求其他业务；
+如用户请求订单服务获取订单详情，可订单详情中需要返回商品信息，也就需要再请求商品服务获取商品信息；
+这样就需要nginx需要有发起http请求的能力，而不是让用户浏览器在请求商品访问。
+
+nginx服务发起http请求区分内部请求 和 外部请求
+
+图解
+
+下面我们就介绍一下，openResty中如何发起http请求？
+
+一）内部请求
+
+1）capture请求方法
+
+res = ngx.location.capture(uri,{
+	options？
+});
+
+options可以传参数和设置请求方式
+
+local res = ngx.location.capture("/product",{
+	method = ngx.HTTP_GET,   #请求方式
+	args = {a=1,b=2},  #get方式传参数
+	body = "c=3&d=4" #post方式传参数
+});
+
+res.status --->保存子请求的响应状态码
+res.header --->用一个标准 Lua 表储子请求响应的所有头信息。如果是“多值”响应头，
+		   --->这些值将使用 Lua (数组) 表顺序存储。
+
+res.body   --->保存子请求的响应体数据，它可能被截断。
+		   --->用户需要检测 res.truncated (截断) 布尔值标记来判断 res.body 是否包含截断的数据。
+		   --->这种数据截断的原因只可能是因为子请求发生了不可恢复的错误，
+		   --->例如远端在发送响应体时过早中断了连接，或子请求在接收远端响应体时超时。
+
+res.truncated --->是否截断
+
+-----------------------------------------
+
+编辑nginx.conf配置文件，配置一下路由，定义有个两个服务请求 商品服务请求和订单服务请求
+
+location /product {  #商品服务请求
+	echo "商品请求";
+}
+        
+location /order {  #订单服务请求
+	content_by_lua_block {
+		local res = ngx.location.capture("/product");
+		ngx.say(res.status)
+		ngx.say(res.body)
+	}
+}
+
+ngx.location.capture 方法就是发起http的请求，但是它只能请求 内部服务，不能直接请求外部服务
+
+输出结果，http状态为200，返回了 商品服务中的内容
+
+------------------------------------------------
+
+这边有一种情况，这样的定义，用户用浏览器直接请求商品服务也照样请求
+
+可很多时候我们会要求商品请求 是不对外暴露的，也就是用户无法直接访问商品服务请求。
+那我们只要在内部请求那边加上一个关键字，internal 就可以了
+location /product {  #商品服务请求
+    internal;
+	echo "商品请求";
+}
+这样直接访问就报404错误了
+
+
+-----------------post 请求-----------------
+
+location /product {  #商品服务请求
+	content_by_lua_block {
+		ngx.req.read_body();
+		local args = ngx.req.get_post_args()
+		ngx.print(tonumber(args.a) + tonumber(args.b))
+	}
+}
+		
+location /order {  #订单服务请求
+	content_by_lua_block {
+		local res = ngx.location.capture("/product",{
+			method = ngx.HTTP_POST,  
+			args = {a=1,b=2},  
+			body = "a=3&b=4" 
+		});
+		ngx.say(res.status)
+		ngx.say(res.body)
+	}
+}
+
+
+
+2）capture_multi 并发请求
+再以上基础上面增加需求，要获得用户信息
+正常逻辑: order request ---> product request ---> user request ----> end
+提高性能的方式:   order request ---> product request
+								---> user request      ----> end
+
+
+语法：res1,res2, ... = ngx.location.capture_multi({ 
+								{uri, options?}, 
+								{uri, options?}, 
+								...
+						})
+
+-----并发调用
+location = /sum {
+    internal;
+    content_by_lua_block {
+        ngx.sleep(0.1)
+        local args = ngx.req.get_uri_args()
+        ngx.print(tonumber(args.a) + tonumber(args.b))
+    }
+}
+
+location = /subduction {
+    internal;
+    content_by_lua_block {
+        ngx.sleep(0.1)
+        local args = ngx.req.get_uri_args()
+        ngx.print(tonumber(args.a) - tonumber(args.b))
+    }
+}
+
+location = /app/test_multi {
+    content_by_lua_block {
+        local start_time = ngx.now()
+        local res1, res2 = ngx.location.capture_multi( {
+                        {"/sum", {args={a=3, b=8}}},
+                        {"/subduction", {args={a=3, b=8}}}
+                    })
+        ngx.say("status:", res1.status, " response:", res1.body)
+        ngx.say("status:", res2.status, " response:", res2.body)
+        ngx.say("time used:", ngx.now() - start_time)
+    }
+}
+
+location = /app/test_queue {
+    content_by_lua_block {
+        local start_time = ngx.now()
+        local res1 = ngx.location.capture("/sum", {
+                        args={a=3, b=8}
+                    })
+        local res2 = ngx.location.capture("/subduction", {
+                        args={a=3, b=8}
+                    })
+        ngx.say("status:", res1.status, " response:", res1.body)
+        ngx.say("status:", res2.status, " response:", res2.body)
+        ngx.say("time used:", ngx.now() - start_time)
+    }
+}
+
+==============================================
+
+二）外部请求
+
+如何发起外部请求呢？
+因为ngx.location.capture不能直接发起外部请求，我们需要通过内部请求中用反向代理请求发起外部请求
+
+location /product {
+	internal;
+    proxy_pass "https://s.taobao.com/search?q=iphone";
+}
+        
+location /order {
+	content_by_lua_block {
+	local res = ngx.location.capture("/product");
+	ngx.say(res.status)
+	ngx.say(res.body)
+     }
+}
+
+在商品服务那边用的proxy_pass 请求外部http请求，这样就达到了请求外部http的目的。
+
+请求返回了200，表示请求成功了；
+
+但发现都是乱码，这个是什么原因呢？
+一开始想到的是字符编码的问题，需要把虚拟主机的server模块配置一个字符编码
+charset UTF-8;   设置为utf-8。重启nginx重新访问
+还是乱码，这是为什么呢，编码不是改了吗？这个是因为taobao这个web服务器加了gzip压缩，
+他返回给我们的结果是经过压缩的，我们再接受过来的时候需要解压才行，那怎么办？
+我们可以让taobao服务返回不需要压缩的数据吗?  我们可以在请求外部链接那边设置
+proxy_set_header Accept-Encoding   ' ';#让后端不要返回压缩（gzip或deflate）的内容
+最终
+location /product {
+	internal;
+	proxy_set_header Accept-Encoding ' ';
+	proxy_pass "https://s.taobao.com/search?q=iphone";
+}
+重启nginx，再次访问，结果输出
+
+==========================================================
+
+以上我们介绍了 内部访问 和  外部访问
+
+三）动态变量
+
+刚才我们请求外部请求，是写死了q=iphone，那我们用capture传参
+
+location /product {
+	internal;
+	resolver 8.8.8.8;
+	proxy_set_header Accept-Encoding ' ';
+	proxy_pass "https://s.taobao.com/search?q=$arg_q";
+}
+        
+location /order {
+	content_by_lua_block {
+		local get_args = ngx.req.get_uri_args();
+		local res = ngx.location.capture("/product",{
+			method = ngx.HTTP_GET,
+			args = {q=get_args["q"]}
+		});
+		ngx.say(res.status)
+		ngx.say(res.body)
+	}
+}
+
+注意：在proxy_pass 中使用变量，需要使用resolver指令解析变量中的域名
+
+# google 域名解析
+resolver 8.8.8.8;
+
+
+这样我们请求传q参数的值，随便由用户决定查询什么值。
+我们这边就发现了请求外部服务的时候发现比较复杂，我们可以借用第三方的库 resty.http ，
+从可实现外部请求，而且使用很方便，下篇文章我们就介绍resty.http模块
